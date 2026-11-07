@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Jogo Catecismo - Pedras do Céu</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1f3a; color: #fff; font-family: Arial, sans-serif; touch-action: none; }
+#ui { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; z-index: 10; text-shadow: 1px 1px 2px #000; }
+canvas { display: block; }
+.controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 20px; z-index: 20; }
+.btn { width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,0.15); border: 3px solid rgba(255,255,255,0.4); color: #fff; font-size: 32px; font-weight: bold; display: flex; align-items: center; justify-content: center; user-select: none; }
+.btn:active { background: rgba(0,255,120,0.3); border-color: #0ff0; }
+.modal { position: absolute; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 100; padding: 20px; }
+.modal.show { display: flex; }
+.modal h2 { margin-bottom: 14px; font-size: 20px; text-align: center; }
+.modal p { margin-bottom: 16px; font-size: 17px; text-align: center; line-height: 1.4; }
+.options { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; }
+.opt { background: #1a3a6e; border: 2px solid #4da6ff; color: #fff; padding: 14px; font-size: 16px; border-radius: 10px; text-align: left; cursor: pointer; }
+.opt:active { background: #4da6ff; color: #000; }
+.ref { margin-top: 12px; font-size: 13px; color: #aec6ff; text-align: center; }
+#finalScore { font-size: 28px; color: #0ff0; margin: 10px 0 18px 0; }
+input { padding: 12px; font-size: 18px; border-radius: 8px; border: none; width: 220px; text-align: center; margin-bottom: 14px; }
+.rowbtn { display: flex; gap: 10px; justify-content: center; }
+.smallbtn { padding: 10px 18px; font-size: 16px; border-radius: 8px; border: none; background: #0aa; color: #fff; cursor: pointer; }
+.smallbtn.secondary { background: #666; }
+#leaderboardLink { margin-top: 10px; color: #4da6ff; text-decoration: none; font-size: 14px; }
+#leaderboardLink:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div>Pontuação: <span id="score">0</span></div>
+  <div>Vidas: <span id="lives">3</span></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<div class="controls">
+  <div class="btn" id="btnLeft">◀</div>
+  <div class="btn" id="btnRight">▶</div>
+</div>
+
+<div id="qModal" class="modal">
+  <h2 id="qTitle">Pergunta</h2>
+  <p id="qText"></p>
+  <div class="options" id="qOptions"></div>
+  <div class="ref" id="qRef"></div>
+</div>
+
+<div id="goModal" class="modal">
+  <h2>Fim de Jogo</h2>
+  <div id="finalScore">Sua pontuação: 0</div>
+  <input id="nameInput" type="text" placeholder="Seu nome" maxlength="20">
+  <div class="rowbtn">
+    <button class="smallbtn" id="saveBtn">Salvar</button>
+    <button class="smallbtn secondary" id="restartBtn">Jogar Novamente</button>
+  </div>
+  <a id="leaderboardLink" href="/leaderboard">Ver Placar</a>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const qModal = document.getElementById('qModal');
+const goModal = document.getElementById('goModal');
+const qTitle = document.getElementById('qTitle');
+const qText = document.getElementById('qText');
+const qOptions = document.getElementById('qOptions');
+const qRef = document.getElementById('qRef');
+
+let W, H;
+function resize(){ W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+let score = 0, lives = 3, gameOver = false, paused = false;
+let player = { x: W/2, y: H-40, w: 70, h: 22, color: '#0ff0' };
+let speed = 4;
+let stones = [];
+let hearts = [];
+let frame = 0;
+let questionInterval = 0;
+let currentQuestion = null;
+
+function rand(min,max){ return Math.random()*(max-min)+min; }
+
+function spawnStone(){
+  stones.push({
+    x: rand(20, W-20),
+    y: -30,
+    r: rand(14, 26),
+    vx: rand(-1,1),
+    vy: rand(2, speed+2),
+    num: Math.floor(rand(1,10)),
+    color: '#f88'
+  });
+}
+
+function spawnHeart(){
+  if (Math.random() < 0.015) hearts.push({ x: rand(30, W-30), y: -20, r: 14, vy: rand(2,4) });
+}
+
+function drawPlayer(){
+  ctx.fillStyle = player.color;
+  ctx.beginPath();
+  ctx.moveTo(player.x, player.y);
+  ctx.lineTo(player.x-player.w/2, player.y+player.h);
+  ctx.lineTo(player.x+player.w/2, player.y+player.h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+}
+
+function drawStone(s){
+  ctx.fillStyle = s.color;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold '+(s.r*1.2)+'px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(s.num, s.x, s.y);
+}
+
+function drawHeart(h){
+  ctx.fillStyle = '#f44';
+  ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('♥', h.x, h.y);
+}
+
+function collideRectCircle(rx, ry, rw, rh, cx, cy, cr){
+  const nearestX = Math.max(rx, Math.min(cx, rx+rw));
+  const nearestY = Math.max(ry, Math.min(cy, ry+rh));
+  const dx = cx-nearestX, dy = cy-nearestY;
+  return dx*dx+dy*dy <= cr*cr;
+}
+
+let lastTouchDir = 0;
+const btnLeft = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+
+function pressLeft(){ lastTouchDir = -1; }
+function pressRight(){ lastTouchDir = 1; }
+function releaseTouch(){ lastTouchDir = 0; }
+
+btnLeft.addEventListener('touchstart', e=>{ e.preventDefault(); pressLeft(); }, {passive:false});
+btnLeft.addEventListener('touchend', e=>{ e.preventDefault(); releaseTouch(); }, {passive:false});
+btnLeft.addEventListener('mousedown', pressLeft);
+btnLeft.addEventListener('mouseup', releaseTouch);
+btnLeft.addEventListener('mouseleave', releaseTouch);
+
+btnRight.addEventListener('touchstart', e=>{ e.preventDefault(); pressRight(); }, {passive:false});
+btnRight.addEventListener('touchend', e=>{ e.preventDefault(); releaseTouch(); }, {passive:false});
+btnRight.addEventListener('mousedown', pressRight);
+btnRight.addEventListener('mouseup', releaseTouch);
+btnRight.addEventListener('mouseleave', releaseTouch);
+
+window.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft') pressLeft();
+  if(e.key==='ArrowRight') pressRight();
+});
+window.addEventListener('keyup', e=>{
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight') releaseTouch();
+});
+
+async function showQuestion(){
+  asking = true;
+  paused = true;
+  try {
+    const r = await fetch('/api/question');
+    const q = await r.json();
+    currentQuestion = q;
+    qTitle.textContent = 'Pergunta da Bíblia / Catecismo';
+    qText.textContent = q.question;
+    qRef.textContent = q.reference ? 'Referência: '+q.reference : '';
+    qOptions.innerHTML = '';
+    Object.entries(q.options).forEach(([k,v])=>{
+      const b = document.createElement('button');
+      b.className='opt';
+      b.textContent = k+') '+v;
+      b.onclick = ()=> answerQuestion(k);
+      qOptions.appendChild(b);
+    });
+    qModal.classList.add('show');
+  } catch(err){
+    qText.textContent = 'Erro ao carregar pergunta. Tente novamente.';
+    paused = false; asking = false;
+  }
+}
+
+async function answerQuestion(choice){
+  if(!currentQuestion) return;
+  const r = await fetch('/api/check-answer', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({question_id: currentQuestion.id, answer: choice})
+  });
+  const res = await r.json();
+  qModal.classList.remove('show');
+  asking = false;
+  paused = false;
+  currentQuestion = null;
+  if(res.correct){
+    score += 10;
+    showToast('Correto! +10 pontos', '#0f0');
+  } else {
+    score = Math.max(0, score-5);
+    showToast('Errado! -5 pontos', '#f44');
+  }
+  updateHUD();
+}
+
+function showToast(msg, color){
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.position = 'absolute';
+  t.style.top = '50px';
+  t.style.left = '50%';
+  t.style.transform = 'translateX(-50%)';
+  t.style.background = color;
+  t.style.color = '#000';
+  t.style.padding = '8px 16px';
+  t.style.borderRadius = '20px';
+  t.style.fontWeight = 'bold';
+  t.style.zIndex = '200';
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 1200);
+}
+
+function updateHUD(){ scoreEl.textContent = score; livesEl.textContent = lives; }
+
+function gameOverScreen(){
+  gameOver = true;
+  paused = true;
+  document.getElementById('finalScore').textContent = 'Sua pontuação: '+score;
+  goModal.classList.add('show');
+}
+
+document.getElementById('saveBtn').onclick = async ()=>{
+  const name = document.getElementById('nameInput').value.trim() || 'Anônimo';
+  await fetch('/api/score', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username: name, score: score})
+  });
+  goModal.classList.remove('show');
+  location.reload();
+};
+document.getElementById('restartBtn').onclick = ()=>{
+  location.reload();
+};
+
+var asking = false;
+
+function loop(){
+  if(gameOver) return;
+  if(!paused){
+    ctx.clearRect(0,0,W,H);
+
+    if(lastTouchDir===-1) player.x -= 9;
+    if(lastTouchDir===1) player.x += 9;
+    player.x = Math.max(player.w/2, Math.min(W-player.w/2, player.x));
+
+    frame++;
+    if(frame % Math.max(30, 90 - Math.floor(score/20)) === 0) spawnStone();
+    spawnHeart();
+
+    for(let i=stones.length-1;i>=0;i--){
+      const s = stones[i];
+      s.x += s.vx;
+      s.y += s.vy;
+      drawStone(s);
+      if(s.y > H+ s.r){ stones.splice(i,1); score += 1; updateHUD(); continue; }
+      if(collideRectCircle(player.x-player.w/2, player.y, player.w, player.h, s.x, s.y, s.r)){
+        stones.splice(i,1);
+        lives--;
+        updateHUD();
+        if(lives<=0){ gameOverScreen(); return; }
+        else { showQuestion(); }
+      }
+    }
+
+    for(let i=hearts.length-1;i>=0;i--){
+      const h = hearts[i];
+      h.y += h.vy;
+      drawHeart(h);
+      if(h.y > H+h.r){ hearts.splice(i,1); continue; }
+      if(collideRectCircle(player.x-player.w/2, player.y, player.w, player.h, h.x, h.y, h.r)){
+        hearts.splice(i,1);
+        lives++;
+        updateHUD();
+        showToast('Vida extra! ❤', '#f44');
+      }
+    }
+
+    drawPlayer();
+
+    if(!asking){
+      questionInterval++;
+      if(questionInterval > 650){
+        questionInterval = 0;
+        showQuestion();
+      }
+    }
+  } else {
+    ctx.clearRect(0,0,W,H);
+    drawPlayer();
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

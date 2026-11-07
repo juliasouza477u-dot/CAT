@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Placar - Jogo Catecismo</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0b1f3a; color: #fff; font-family: Arial, sans-serif; padding: 16px; }
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+a.back { color: #4da6ff; text-decoration: none; font-size: 18px; font-weight: bold; }
+a.back:hover { text-decoration: underline; }
+h1 { font-size: 22px; }
+table { width: 100%; border-collapse: collapse; background: rgba(255,255,255,0.05); border-radius: 12px; overflow: hidden; }
+th, td { padding: 14px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+th { background: #1a3a6e; color: #fff; font-size: 15px; }
+tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+.rank { font-weight: bold; color: #0ff0; width: 40px; }
+.empty { text-align: center; padding: 30px; color: #aaa; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Voltar ao jogo</a>
+  <h1>🏆 Placar</h1>
+</header>
+<table>
+  <thead>
+    <tr><th>#</th><th>Jogador</th><th>Melhor Pontuação</th></tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="empty" id="empty" style="display:none;">Nenhum placar ainda. Jogue e seja o primeiro!</p>
+
+<script>
+async function load(){
+  try {
+    const r = await fetch('/api/leaderboard');
+    const data = await r.json();
+    const tbody = document.getElementById('rows');
+    const empty = document.getElementById('empty');
+    if(!data || data.length === 0){
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    data.forEach((d, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="rank">${i+1}</td><td>${escapeHtml(d.username)}</td><td>${d.best}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch(e){
+    document.getElementById('rows').innerHTML = '<tr><td colspan="3" style="text-align:center;color:#f44;">Erro ao carregar placar.</td></tr>';
+  }
+}
+function escapeHtml(text){
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+load();
+</script>
+</body>
+</html>
