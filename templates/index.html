@@ -9,9 +9,7 @@
 html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1f3a; color: #fff; font-family: Arial, sans-serif; touch-action: none; }
 #ui { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 18px; font-weight: bold; z-index: 10; text-shadow: 1px 1px 2px #000; }
 canvas { display: block; }
-.controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 20px; z-index: 20; }
-.btn { width: 90px; height: 90px; border-radius: 50%; background: rgba(255,255,255,0.15); border: 3px solid rgba(255,255,255,0.4); color: #fff; font-size: 32px; font-weight: bold; display: flex; align-items: center; justify-content: center; user-select: none; }
-.btn:active { background: rgba(0,255,120,0.3); border-color: #0ff0; }
+/* Botões removidos - controle só com o dedo */
 .modal { position: absolute; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 100; padding: 20px; }
 .modal.show { display: flex; }
 .modal h2 { margin-bottom: 14px; font-size: 20px; text-align: center; }
@@ -37,11 +35,6 @@ input { padding: 12px; font-size: 18px; border-radius: 8px; border: none; width:
 </div>
 
 <canvas id="game"></canvas>
-
-<div class="controls">
-  <div class="btn" id="btnLeft">◀</div>
-  <div class="btn" id="btnRight">▶</div>
-</div>
 
 <div id="qModal" class="modal">
   <h2 id="qTitle">Pergunta</h2>
@@ -79,10 +72,11 @@ window.addEventListener('resize', resize);
 resize();
 
 let score = 0, lives = 3, gameOver = false, paused = false;
-let player = { x: W/2, y: H-40, w: 70, h: 22, color: '#0ff0' };
+let player = { x: W/2, y: H-60, w: 60, h: 24, color: '#0ff0' };
 let speed = 4;
 let stones = [];
 let hearts = [];
+let bullets = [];
 let frame = 0;
 let questionInterval = 0;
 let currentQuestion = null;
@@ -106,6 +100,7 @@ function spawnHeart(){
 }
 
 function drawPlayer(){
+  // Corpo do canhão
   ctx.fillStyle = player.color;
   ctx.beginPath();
   ctx.moveTo(player.x, player.y);
@@ -114,6 +109,14 @@ function drawPlayer(){
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+  // Cano do canhão (aponta para cima)
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(player.x-6, player.y-18, 12, 18);
+}
+
+function drawBullet(b){
+  ctx.fillStyle = '#0f0';
+  ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI*2); ctx.fill();
 }
 
 function drawStone(s){
@@ -138,32 +141,59 @@ function collideRectCircle(rx, ry, rw, rh, cx, cy, cr){
   return dx*dx+dy*dy <= cr*cr;
 }
 
-let lastTouchDir = 0;
-const btnLeft = document.getElementById('btnLeft');
-const btnRight = document.getElementById('btnRight');
+function collideCircle(c1x, c1y, r1, c2x, c2y, r2){
+  const dx = c1x-c2x, dy = c1y-c2y;
+  return dx*dx+dy*dy <= (r1+r2)*(r1+r2);
+}
 
-function pressLeft(){ lastTouchDir = -1; }
-function pressRight(){ lastTouchDir = 1; }
-function releaseTouch(){ lastTouchDir = 0; }
+// === Controle apenas com o dedo (arrastar para mover, soltar para atirar) ===
+let lastTouchX = null;
+canvas.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  lastTouchX = e.touches[0].clientX;
+}, {passive:false});
 
-btnLeft.addEventListener('touchstart', e=>{ e.preventDefault(); pressLeft(); }, {passive:false});
-btnLeft.addEventListener('touchend', e=>{ e.preventDefault(); releaseTouch(); }, {passive:false});
-btnLeft.addEventListener('mousedown', pressLeft);
-btnLeft.addEventListener('mouseup', releaseTouch);
-btnLeft.addEventListener('mouseleave', releaseTouch);
+canvas.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  if(lastTouchX !== null){
+    const dx = e.touches[0].clientX - lastTouchX;
+    player.x += dx * 1.2;
+    lastTouchX = e.touches[0].clientX;
+    player.x = Math.max(player.w/2, Math.min(W-player.w/2, player.x));
+  }
+}, {passive:false});
 
-btnRight.addEventListener('touchstart', e=>{ e.preventDefault(); pressRight(); }, {passive:false});
-btnRight.addEventListener('touchend', e=>{ e.preventDefault(); releaseTouch(); }, {passive:false});
-btnRight.addEventListener('mousedown', pressRight);
-btnRight.addEventListener('mouseup', releaseTouch);
-btnRight.addEventListener('mouseleave', releaseTouch);
+canvas.addEventListener('touchend', e=>{
+  e.preventDefault();
+  // Dispara um projétil quando solta o dedo
+  bullets.push({ x: player.x, y: player.y, vy: -12 });
+  lastTouchX = null;
+}, {passive:false});
 
-window.addEventListener('keydown', e=>{
-  if(e.key==='ArrowLeft') pressLeft();
-  if(e.key==='ArrowRight') pressRight();
+// Suporte a mouse (para testar no PC)
+canvas.addEventListener('mousedown', e=>{
+  lastTouchX = e.clientX;
 });
-window.addEventListener('keyup', e=>{
-  if(e.key==='ArrowLeft'||e.key==='ArrowRight') releaseTouch();
+canvas.addEventListener('mousemove', e=>{
+  if(lastTouchX !== null){
+    const dx = e.clientX - lastTouchX;
+    player.x += dx * 1.2;
+    lastTouchX = e.clientX;
+    player.x = Math.max(player.w/2, Math.min(W-player.w/2, player.x));
+  }
+});
+canvas.addEventListener('mouseup', e=>{
+  bullets.push({ x: player.x, y: player.y, vy: -12 });
+  lastTouchX = null;
+});
+canvas.addEventListener('mouseleave', ()=>{ lastTouchX = null; });
+
+// Teclado (opcional para PC)
+window.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft') player.x -= 20;
+  if(e.key==='ArrowRight') player.x += 20;
+  if(e.key===' ' || e.code==='Space') bullets.push({ x: player.x, y: player.y, vy: -12 });
+  player.x = Math.max(player.w/2, Math.min(W-player.w/2, player.x));
 });
 
 async function showQuestion(){
@@ -297,6 +327,25 @@ function loop(){
     }
 
     drawPlayer();
+
+    // Atualizar e desenhar projéteis (tiro do canhão)
+    for(let i=bullets.length-1;i>=0;i--){
+      const b = bullets[i];
+      b.y += b.vy;
+      drawBullet(b);
+      if(b.y < 0){ bullets.splice(i,1); continue; }
+      // Projétil acerta pedra
+      for(let j=stones.length-1;j>=0;j--){
+        const s = stones[j];
+        if(collideCircle(b.x, b.y, 5, s.x, s.y, s.r)){
+          bullets.splice(i,1);
+          stones.splice(j,1);
+          score += 5;
+          updateHUD();
+          break;
+        }
+      }
+    }
 
     if(!asking){
       questionInterval++;
